@@ -3,31 +3,16 @@
 #include<unistd.h>
 #include<stdio.h>
 #include<stdlib.h>
-#include<stdbool.h>
-#include<math.h>
 #include<getopt.h>
-// #include<argp.h>
 
 int block = 0;
-char *positions = NULL;
+int position = 0;
 char *fromPath = NULL;
 char *toPath = NULL;
-bool isBlockGiven = false;
-bool isPositionGiven = false;
-bool isPrinting = false;
-double static featureCheck = 0;
-
-char copyFileContent( char *block,char *argv[], int *optind){
-    //TODO file opening, file copying based on user input block size. 
-    fprintf(stdout,"\nCopy File Content function\n");
-    printf("---you entered %s as block size\n", block);
-    int idx = *optind;
-    fromPath = argv[idx];
-    toPath = argv[idx + 1];
-
-    fprintf(stdout, "from: %s\n", fromPath);
-    fprintf(stdout, "to: %s\n", toPath);
-}
+int isBlockGiven = 0;
+int isPositionGiven = 0;
+int isPrinting = 0;
+int help = 0;
 
 int getToFromFilePath( char *argv[], int *optind) {
     int idx = *optind;
@@ -35,177 +20,215 @@ int getToFromFilePath( char *argv[], int *optind) {
     toPath = argv[idx + 1];
 
     if(access(fromPath,F_OK) == 0 && access(toPath,F_OK) == 0){ // check if the file exists in the directory specified
-        fprintf(stdout, "\nOrigin File Path:%s\n", fromPath);
+        fprintf(stdout, "Origin File Path:%s\n", fromPath);
         if(toPath){ fprintf(stdout, "Destination Filepath:%s\n", toPath); }
     }
 }
 
-void checkFeatures(){
-    double baseFeatureCheck = 2;
-    double blockFeature = 1;
-    double positionFeature = 2;
-    double printingFeature = 3;
-
-    if(isBlockGiven){
-        //copyFileContent(block, argv, optind);
-        fprintf(stdout, "\nfeatureCheck before = %f, basefeat: %f\n", featureCheck, baseFeatureCheck);
-        fprintf(stdout, "blockfeat = %f\n", blockFeature);
-        featureCheck += pow(baseFeatureCheck, blockFeature);
-        
-        fprintf(stdout, "featureCheck after = %f\n", featureCheck);
-    }
-    if(isPositionGiven){
-        fprintf(stdout, "\nfeatureCheck before 2= %f, basefeat: %f\n",featureCheck ,baseFeatureCheck);
-        fprintf(stdout, "position = %f\n", positionFeature);
-        featureCheck += pow(baseFeatureCheck, positionFeature);
-        
-        fprintf(stdout, "featureCheck after 2= %f\n", featureCheck);
-    }
-    // if(isPrinting){
-    //     fprintf(stdout, "\nprintingCheck before 3= %f, basefeat: %f\n",featureCheck ,baseFeatureCheck);
-    //     fprintf(stdout, "printing = %f\n", printingFeature);
-    //     featureCheck += pow(baseFeatureCheck, printingFeature);
-        
-    //     fprintf(stdout, "printingCheck after 2= %f\n", featureCheck);
-    // }
-}
-
-void printFile(){
-
-    int fd = open(fromPath, O_RDONLY );
-
-	if(fd < 0){
-		perror("Cannot open file!");
-		exit(1);
-	}
-
-	printf("%s open succussful\n", fromPath);
-
+int getFileLength(int fd){
     int fileLength = lseek( fd, 0, SEEK_END );  // get file length using lseek()
     if ( fileLength < 0 ){
         exit(1);
     }
-    lseek(fd, 0, SEEK_SET); // return to beginning position of file
+    lseek(fd, 0, SEEK_SET); // return to beginning position of file after seek to EOF above
 
-    char *content[fileLength];
-    read(fd, content, fileLength);// read content from fd
-    write(1, content, fileLength);// 1 refers to stdout
+    return fileLength;
+}
 
+int openFromFile(char *path){
+    int fd = open(path,O_RDONLY); // open the source file with O_RDONLY permission 
+    if(fd < 0){
+		perror("Error open file!");
+		exit(1); // exit program if errpr opening source file 
+	}
+    return fd;
+}
+
+int openToFile(char *path){
+    // open the destination file with read write permission
+    // append new data to EOF, and create a new file if not exists
+    // Read and write permission bit for file owner, 
+    // and set read permission for group and other users.
+
+    int fd = open(path, O_WRONLY | O_APPEND | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
+    if(fd < 0){
+		perror("Error!");
+		exit(1); //exit program if error opening file
+	}
+    return fd;
+}
+
+void printFile(){
+
+    if(fromPath == NULL){
+        fprintf(stderr,"Error: No file specified.\n");
+        exit(1); //exit program if not found source file
+    }
+    
+    int fd = openFromFile(fromPath);
+    int fileLength = getFileLength(fd);
+    char *buf[fileLength]; // buffer to hold the content of source file
+
+    fprintf(stdout, "\nContent of source file: \n");
+    read(fd, buf, fileLength);// read content from source file fd
+    write(1, buf, fileLength);// write to stdout
     close(fd);
+    fprintf(stdout, "--- EOF ---\n");
+}
 
+void copyBlock(){
+    int fd1 = openFromFile(fromPath);
+    int fd2 = openToFile(toPath);
+    int fileLength = getFileLength(fd1);
+    char buf[block]; // buffer to hold the content of teh source file
+
+    // Assign the file size as the block size if user input block size exceeded the file size
+    if(block > fileLength){
+        fprintf(stdout, "Block size entered: %d exceeds source file length: %d\n", block, fileLength);
+        fprintf(stdout, "Using the file size: %d as the block size\n", fileLength);
+        block = fileLength;
+    }
+    else{
+        fprintf(stdout,"Block size entered: %d\n", block);
+    }
+
+    read(fd1, buf, block);  // read content from source file fd1
+    buf[fileLength] = '\0'; // NULL terminator in read buffer
+    write(fd2, buf, block); // write content to destination file fd2
+    close(fd1);             // close fd1
+    close(fd2);             // close fd2
+}
+
+void copyPositional(){
+
+    int fd1 = openFromFile(fromPath);
+    int fd2 = openToFile(toPath);
+    int fileLength = getFileLength(fd1);
+
+    // lseek to the position user input
+    lseek(fd1, position, SEEK_SET);
+    fprintf(stdout,"Position entered: %d\n", position);
+
+    char *buf[fileLength];                 // buffer to hold the content of source file
+    read(fd1, buf, fileLength-position);   // read the content of the source file into buffer
+    write(fd2, buf, fileLength-position);  // write the buffer to the destination file
+    close(fd1);                            // close fd1
+    close(fd2);                            // close fd2
+}
+
+void copyBlockandPosition(){
+
+    int fd1 = openFromFile(fromPath);
+    int fd2 = openToFile(toPath);
+    int fileLength = getFileLength(fd1);
+    char buf[block];        // buffer to hold the content of the source file
+
+    // lseek to the position user input in switch option argument
+    lseek(fd1, position, SEEK_SET);
+    fprintf(stdout,"Position entered: %d\n", position);
+
+    // Assign the file size minus the position as block size if block size input exceeds source file size
+    if(block > fileLength-position){
+        fprintf(stdout, "Block size entered: %d exceeds source file length: %d\n", block, fileLength);
+        fprintf(stdout, "Using the size: %d as the block size\n", fileLength-position);
+        block = fileLength-position;
+    }
+    else{
+        fprintf(stdout,"Block size entered: %d\n", block);
+    }
+
+    read(fd1, buf, block);  // read content from source file fd1
+    write(fd2, buf, block); // write content to destination file fd2
+    close(fd1);             // close fd1
+    close(fd2);             // close fd2
 }
 
 void runTask(){
 
-    checkFeatures();
-
     if(isPrinting){
         printFile();
     }
-    switch((int)featureCheck){
-
-        case 2:
-            fprintf(stdout, "block given here size= %d\n", block);
-            break;
-        case 4:
-            fprintf(stdout, "position given here position= %d\n", *positions);
-            break;
-        case 6:
-            fprintf(stdout, "block and position given here\n");
-            break;
-        default:
-            fprintf(stdout, "\n--------------------------------\n");
+    if(isBlockGiven && isPositionGiven){
+        copyBlockandPosition();
     }
+
+    else if(isBlockGiven){
+        copyBlock();
+    }
+
+    else if(isPositionGiven){
+        copyPositional();
+    }
+    else{
+        exit(1);
+    }
+}
+
+void usage (FILE *fp, char *argv[])
+{
+    // help message for this program
+    fprintf(fp, "Usage: %s [options] [argument] <source file path> [destination file path]\n",argv[0]);
+    fprintf(fp, "  -h, --help\t\t"
+                 "Print this help and exit.\n");
+    fprintf(fp, "  -b, --block-size\t"
+                 "Indicate the block size to copy from the source file.\n");
+    fprintf(fp, "  -p, --position\t"
+                 "Indicate the position to copy from the source file.\n");
+    fprintf(fp, "  -o, --output\t\t"
+                 "Output the content in the source file.\n");
+    exit(0);
 }
 
 int main(int argc, char *argv[]){
     int option;
+    struct option longopts[] =
+    {   // long options flag struct
+        {"help", no_argument, NULL, 'h'},
+        {"block-size", required_argument, NULL, 'b'},
+        {"position", required_argument, NULL, 'p'},
+        {"output", no_argument, NULL, 'o'},
+        { 0, 0, 0, 0}
+    };
 
-    while ((option = getopt(argc, argv,"b:c:f:t:o::")) != -1){
+    while ((option = getopt_long(argc, argv,"b:p:oh", longopts, 0)) != -1){
+        if (option == -1){break;}
 
         switch(option){
             case 'b':
-            block = atoi(optarg);
+            block = atoi(optarg); // parse block size argument string into int
             if(block < 0){
-                printf("Negative block size entered.\n");
-                break;
+                // check for negative block size
+                fprintf(stderr,"You have entered an invalid block number!\n");
+                return 1;
             }
-            printf("this is flag -b\n");
-            printf("You entered %d as block size\n", block);
-            //copyFileContent(block, &argv, optind);
-            isBlockGiven = true;
+            isBlockGiven = 1;
             break;
 
-            case 'c':
-            positions = optarg;
-            printf("this is flag -c\n");
-            printf(" you entered %s as position\n", positions);
-            isPositionGiven = true;
+            case 'p':
+            position = atoi(optarg); // parse position argument string into int
+            isPositionGiven = 1;
             break;
-
-            /* case 'f':
-            fromPath = optarg;
-            printf("this is flag -f\n");
-            printf(" you entered %s as origin file path\n", fromPath);
-            // check origin file path validity
-            break;
-
-            case 't':
-            toPath = optarg;
-            printf("this is flag -t\n");
-            printf(" you entered %s as destination file path\n", toPath);
-            // check destination file path validity
-            break; */
 
             case 'o':
-            //path = optarg;
-            printf("this is flag -o\n");
-            //printf(" you entered %s as file path to print\n", path);
-            // check toprint file path validity
-            // call toPrint() function
-            isPrinting = true;
+            isPrinting = 1;
+            break;
+
+            case 'h':
+            help = 1;
             break;
 
             case '?':
-            if (optopt == 'b')
-            {
-                printf("Missing block size input after -b flag\n");
-            }
-            else if (optopt == 'c')
-            {
-                printf("Missing the position input after -c flag\n");
-            }
-            /* else if (optopt == 'f')
-            {
-                printf("Missing the original file path input after -p1 flag\n");
-            }
-            else if (optopt == 't')
-            {
-                printf("Missing the destination file path input after -p2 flag\n");
-            } */
-            else if (optopt == 'o')
-            {
-                printf("Missing the file path input after -o flag\n");
-            }
-            else{
-                printf("Invalid option");
-            }
+            usage(stdout, argv);
             break;
             default:
-                fprintf(stderr, "Usage: %s [-bco] <arguments>\n",argv[0]);
-                exit(1);
+                return 0;
         }
 
     }
-    //copyFileContent(block, fromPath, toPath, &argv);
-
-    //positionals = &argv[optind];
-    /* printf("%d", optind);
-    for (idx = optind; idx < argc; idx++){
-        fprintf(stdout, "Positional: %s, idx: %d\n", argv[idx], idx);
-    } */
-    getToFromFilePath(/* positionals, argc, */ argv, &optind);
-
+    if (help){
+        usage(stdout, argv);
+    }
+    getToFromFilePath(argv, &optind);
     runTask();
 
     return 0;
