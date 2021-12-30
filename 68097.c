@@ -5,14 +5,14 @@
 #include<stdlib.h>
 #include<getopt.h>
 
-int block = 0;
-int position = 0;
-char *fromPath = NULL;
-char *toPath = NULL;
-int isBlockGiven = 0;
-int isPositionGiven = 0;
-int isPrinting = 0;
-int help = 0;
+int block = 0;              // User input block size
+int position = 0;           // Position user input
+char *fromPath = NULL;      // User input source file path
+char *toPath = NULL;        // User input destination file path
+int isBlockGiven = 0;       // Check if user indicated -b option
+int isPositionGiven = 0;    // Check if user indicated -p option
+int isPrinting = 0;         // Check if user indicated -o option
+int help = 0;               // Check if user indicated -h option
 
 int getToFromFilePath( char *argv[], int *optind) {
     // This function get the source file path and destination file path and store in fromPath and toPath pointers.
@@ -90,7 +90,7 @@ void copyBlock(){
     int fd1 = openFromFile(fromPath);
     int fd2 = openToFile(toPath);
     int fileLength = getFileLength(fd1);
-    char buf[block]; // buffer to hold the content of teh source file
+    char buf[block]; // buffer to hold the content of the source file
 
     // Assign the file length as the block size if user input block size exceeded the file size
     if(block > fileLength){
